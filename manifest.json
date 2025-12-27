@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Twitter Fast Block Button",
+  "version": "1.0",
+  "description": "Add block buttons next to usernames on tweets, replies, and comments",
+  "content_scripts": [
+    {
+      "matches": ["https://twitter.com/*", "https://x.com/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
+  ],
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}
