@@ -89,7 +89,7 @@ The content script is divided into several functional modules:
   3. Searches for the "Block @username" menu item
   4. Clicks the block option
   5. Waits for confirmation dialog
-  6. Sets up MutationObserver to handle dialog closure
+  6. Sets up MutationObserver to handle dialog closure (works for both confirm AND cancel)
 - `waitForDropdown()`: Polls for dropdown appearance (50ms intervals)
 - `waitForConfirmationDialog()`: Polls for confirmation dialog (50ms intervals)
 
@@ -150,9 +150,9 @@ Click Twitter's more button → Wait for dropdown
     ↓
 Find "Block @username" in dropdown → Click it
     ↓
-Wait for confirmation dialog → User confirms
+Wait for confirmation dialog → User confirms OR cancels
     ↓
-MutationObserver detects dialog close → Cleanup
+MutationObserver detects dialog close → Cleanup (closes dropdown if still open)
 ```
 
 ### Key Design Decisions
@@ -164,6 +164,7 @@ MutationObserver detects dialog close → Cleanup
 5. **Twitter Native Integration**: Uses Twitter's own UI elements rather than API calls
 6. **Polling with Timeouts**: Simple approach for waiting on dynamic elements
 7. **Graceful Degradation**: Multiple selectors for finding elements (Twitter's DOM changes often)
+8. **Dialog Cleanup**: MutationObserver ensures dropdown closes whether user confirms OR cancels block action - prevents UI from getting stuck in intermediate state
 
 ### Extension Lifecycle
 
