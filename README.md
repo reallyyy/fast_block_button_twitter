@@ -83,7 +83,7 @@ The content script is divided into several functional modules:
 - Sets up click event listener with async error handling
 - Stores username in dataset for reference
 
-**E. Block Action Handler (Lines 124-161)**
+**E. Block Action Handler (Lines 124-188)**
 - `handleBlockAction()`: Main blocking logic
   1. Finds and clicks Twitter's "more" button
   2. Waits for dropdown menu to appear
@@ -94,7 +94,14 @@ The content script is divided into several functional modules:
 - `waitForDropdown()`: Polls for dropdown appearance (50ms intervals)
 - `waitForConfirmationDialog()`: Polls for confirmation dialog (50ms intervals)
 
-**F. Tweet Injection (Lines 238-334)**
+**F. DOM Helpers (Lines 191-236)**
+- `findCommonAncestor()`: Finds common ancestor of two DOM elements (unused but defined)
+- `findActionContainer()`: Searches up DOM tree to find button action container
+  - Navigates parent elements looking for DIV with 2+ child DIVs
+  - Used to determine correct insertion point for block buttons
+  - Critical for proper button alignment with Twitter's action buttons
+
+**G. Tweet Injection (Lines 238-334)**
 - `injectBlockButtons()`: Main injection routine
   1. Uses fallback selector chain for tweet elements
   2. Extracts unique tweet IDs for deduplication
@@ -103,15 +110,16 @@ The content script is divided into several functional modules:
   5. Enhanced username extraction with fallbacks
   6. Excludes own tweets
   7. Creates and inserts block button before "more" button
+  8. Uses findActionContainer() to determine correct insertion point
 
-**G. DOM Observation (Lines 336-355)**
+**H. DOM Observation (Lines 336-355)**
 - `observeNewTweets()`: Sets up MutationObserver on document body
   - Watches for childList and subtree changes
   - Triggers throttled button injection when DOM updates
   - Handles Twitter's infinite scroll and dynamic content loading
   - 100ms throttle prevents blocking the main thread
 
-**H. Initialization (Lines 357-371)**
+**I. Initialization (Lines 357-371)**
 - `init()`: Entry point that handles page load states
   1. Waits for DOMContentLoaded if page is loading
   2. Starts MutationObserver with throttling
