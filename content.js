@@ -227,8 +227,14 @@ function injectBlockButtons() {
     const tweetKey = tweetId || tweet.outerHTML.substring(0, 200);
     
     if (processedTweets.has(tweetKey)) {
-      debugLog(`Skipping already processed tweet: ${tweetKey}`);
-      return;
+      const hasButton = tweet.querySelector('.fast-block-button');
+      if (hasButton) {
+        debugLog(`Skipping already processed tweet with button: ${tweetKey}`);
+        return;
+      } else {
+        debugLog(`Tweet in processedTweets but button missing (likely recycled), reprocessing: ${tweetKey}`);
+        processedTweets.delete(tweetKey);
+      }
     }
     
     const mainUsername = getUsernameFromElement(tweet);
@@ -247,8 +253,7 @@ function injectBlockButtons() {
     
     const moreButton = findMoreButton(tweet);
     if (!moreButton) {
-      debugLog(`Could not find more button for tweet: ${tweetKey}`);
-      processedTweets.add(tweetKey);
+      debugLog(`Could not find more button for tweet: ${tweetKey} - will retry`);
       return;
     }
     
@@ -260,9 +265,49 @@ function injectBlockButtons() {
     
     debugLog(`Injecting block button for @${mainUsername}`);
     const blockButton = createBlockButton(mainUsername, tweet, moreButton);
-    moreButton.parentElement.insertBefore(blockButton, moreButton);
-    
-    processedTweets.add(tweetKey);
+
+    try {
+      const moreInnerWrapper = moreButton.parentElement;
+      debugLog(`More inner wrapper:`, moreInnerWrapper?.className?.substring(0, 50));
+
+      if (!moreInnerWrapper) {
+        debugLog(`Could not find moreInnerWrapper, skipping tweet: ${tweetKey}`);
+        return;
+      }
+
+      const grokButton = tweet.querySelector('[aria-label="Grok actions"]');
+      debugLog(`Grok button exists in tweet:`, !!grokButton);
+
+      let insertBeforeElement = null;
+
+      if (grokButton) {
+        insertBeforeElement = grokButton.parentElement;
+        debugLog(`Will insert before Grok button's parent`);
+      } else {
+        insertBeforeElement = moreInnerWrapper;
+        debugLog(`Grok not found, will insert before More button's parent`);
+      }
+
+      const buttonWrapper = moreInnerWrapper.cloneNode(false);
+      buttonWrapper.appendChild(blockButton);
+      debugLog(`Created button wrapper with className:`, buttonWrapper.className.substring(0, 50));
+
+      const parentContainer = insertBeforeElement.parentElement;
+      debugLog(`Parent container for insertion:`, parentContainer?.className?.substring(0, 50));
+
+      if (!parentContainer) {
+        debugLog(`Could not find parent container, skipping tweet: ${tweetKey}`);
+        return;
+      }
+
+      parentContainer.insertBefore(buttonWrapper, insertBeforeElement);
+      debugLog(`Successfully injected block button for @${mainUsername}`);
+      processedTweets.add(tweetKey);
+    } catch (error) {
+      console.error('Error injecting block button for tweet:', tweetKey, error);
+      debugLog(`Error injecting block button: ${error.message}`);
+      return;
+    }
   });
 }
 
@@ -369,7 +414,10 @@ function injectProfileBlockButton() {
       }
     });
 
-    moreButton.parentElement.insertBefore(button, moreButton);
+    const buttonWrapper = moreButton.parentElement.cloneNode(false);
+    buttonWrapper.className = moreButton.parentElement.className;
+    buttonWrapper.appendChild(button);
+    moreButton.parentElement.parentElement.insertBefore(buttonWrapper, moreButton.parentElement);
     debugLog('Button inserted');
   }
 }

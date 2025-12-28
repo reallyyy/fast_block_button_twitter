@@ -12,6 +12,7 @@ The fast block button extension had several critical issues:
 3. **Maintenance burden:** Any time Twitter updated their CSS, the extension would break and require manual updates.
 
 4. **Inconsistent button injection:** Some tweets on the timeline didn't get the fast block button, particularly tweets from verified users like @naval, while others worked fine.
+5. **Buttons disappearing on scroll:** Fast block buttons would appear on initial load but disappear when scrolling up/down due to Twitter's virtual scrolling/recycling of DOM elements.
 
 ### Solution Implemented
 
@@ -90,6 +91,40 @@ We completely refactored the button creation approach and fixed the injection co
 - **100% injection reliability:** All tweets, including verified users, now consistently get the block button
 - **Graceful degradation:** Fallback selectors ensure functionality even if Twitter changes DOM structure
 - **Easy debugging:** Toggle debug logging to diagnose issues without performance overhead
+
+**Phase 3: Virtual Scrolling and DOM Structure Adaptation Fixes**
+
+**Root Causes Identified:**
+
+1. **Twitter's virtual scrolling/recycling:** Twitter recycles DOM elements for performance. When scrolling, existing DOM elements (including our injected buttons) are removed and replaced with new elements, but our `processedTweets` Set still contains the tweet ID, preventing re-injection.
+
+2. **Variable DOM structure depth:** Different tweet types (verified users, promoted content, different regions) have different DOM nesting depths. Fixed-depth navigation assumptions caused injection failures.
+
+**Key Changes:**
+
+1. **DOM existence verification before skipping** (content.js:229-238)
+   - Before skipping processed tweets, verify button actually exists in DOM
+   - If button missing (due to Twitter recycling), remove from `processedTweets` Set
+   - Allows re-injection of buttons for recycled tweets
+   - Enables button persistence through scroll navigation
+
+2. **Dynamic DOM navigation strategy** (content.js:261-317)
+   - Primary strategy: Navigate from Grok button (more reliable reference point)
+   - Fallback strategy: Navigate from More button with flexible depth checking
+   - Works with any DOM structure depth without hardcoded assumptions
+   - Handles tweets with different nesting patterns consistently
+
+**Code Changes:**
+
+- `injectBlockButtons()`: Added button existence check in skip logic
+- `injectBlockButtons()`: Implemented dynamic DOM navigation with Grok button as primary reference
+- `injectBlockButtons()`: Simplified insertion logic using relative positioning instead of fixed-depth traversal
+
+**Why This Matters:**
+
+- **Virtual scrolling compatibility:** Twitter aggressively recycles DOM for performance. Without this fix, buttons disappear when scrolling.
+- **Universal DOM support:** Tweets have different structures based on user type, region, Twitter experiments. Fixed-depth navigation fails for many tweets.
+- **Performance preservation:** Still uses Set for deduplication, but adapts to Twitter's DOM recycling behavior.
 
 ## What Failed
 
@@ -501,7 +536,20 @@ function debugLog(...args) {
 
 ## Future Improvements
 
-### 1. More Robust Own Profile Detection
+### 1. Virtual Scrolling Persistence ✅ IMPLEMENTED
+
+**Status:** Completed in Phase 3
+
+**What Was Implemented:**
+- Button existence verification before skipping processed tweets
+- Automatic re-injection when Twitter recycles DOM elements
+- Dynamic DOM navigation for variable tweet structures
+
+**Result:** Fast block buttons now persist through scroll navigation.
+
+---
+
+### 2. More Robust Own Profile Detection
 
 **Proposed Solution:**
 - Check for "Edit profile" button: `[data-testid="editProfileButton"]`
@@ -521,13 +569,15 @@ function isOwnProfile() {
 
 ---
 
-### 2. Enhanced Error Handling
+### 2. Enhanced Error Handling ✅ IMPLEMENTED
 
-**Proposed Improvements:**
-- Wrap DOM operations in try-catch blocks
-- Add error recovery mechanisms
-- Graceful degradation when elements are not found
-- Retry logic for failed DOM queries with exponential backoff
+**Status:** Completed in Phase 2 (content.js:279-317)
+
+**What Was Implemented:**
+- Try-catch wrapper around button injection logic
+- Null checks for all DOM element navigation steps
+- Error logging to console for troubleshooting
+- Graceful return when elements not found (allows retry via MutationObserver)
 
 ---
 
@@ -592,5 +642,7 @@ The extension now provides:
 - **Zero false positives** in deduplication
 - **Resilience to DOM changes** through fallback mechanisms
 - **Easy maintenance** with clear debug logging when needed
+- **Virtual scrolling compatibility** - buttons persist through scroll navigation (Phase 3)
+- **Universal DOM support** - works with any tweet DOM structure depth (Phase 3)
 
 This approach can serve as a pattern for other Twitter extensions that need to add custom UI elements while maintaining both native appearance and reliable functionality.
