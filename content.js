@@ -51,10 +51,32 @@ function findMoreButton(tweetElement) {
   return tweetElement.querySelector('[data-testid="caret"]');
 }
 
-function createBlockButton(username, tweetElement) {
-  const button = document.createElement('button');
-  button.className = 'fast-block-button';
-  button.textContent = '👋';
+function createBlockButton(username, tweetElement, moreButton) {
+  const button = moreButton.cloneNode(true);
+  
+  button.removeAttribute('data-testid');
+  button.removeAttribute('aria-label');
+  button.removeAttribute('aria-expanded');
+  button.removeAttribute('aria-haspopup');
+  
+  button.classList.add('fast-block-button');
+  
+  const div = button.querySelector('div[dir="ltr"]');
+  if (div) {
+    const svg = div.querySelector('svg');
+    if (svg) {
+      svg.remove();
+    }
+    const existingSpan = div.querySelector('span');
+    if (existingSpan) {
+      existingSpan.textContent = '👋';
+    } else {
+      const emojiSpan = document.createElement('span');
+      emojiSpan.textContent = '👋';
+      div.insertBefore(emojiSpan, div.firstChild);
+    }
+  }
+  
   button.dataset.username = username;
   
   button.addEventListener('click', async (e) => {
@@ -159,7 +181,7 @@ function injectBlockButtons() {
     if (mainUsername) {
       const moreButton = findMoreButton(tweet);
       if (moreButton && !tweet.querySelector('.fast-block-button')) {
-        const blockButton = createBlockButton(mainUsername, tweet);
+        const blockButton = createBlockButton(mainUsername, tweet, moreButton);
         moreButton.parentElement.insertBefore(blockButton, moreButton);
       }
     }
@@ -182,6 +204,7 @@ function observeNewTweets() {
 
 function injectProfileBlockButton() {
   const isProfilePage = /^\/[^\/]+$/.test(window.location.pathname);
+  console.log('[FastBlock] injectProfileBlockButton - isProfilePage:', isProfilePage, 'pathname:', window.location.pathname);
   if (!isProfilePage) return;
 
   if (!currentUsername) {
@@ -189,28 +212,49 @@ function injectProfileBlockButton() {
   }
 
   const profileUsername = window.location.pathname.replace('/', '');
+  console.log('[FastBlock] profileUsername:', profileUsername, 'currentUsername:', currentUsername);
   if (profileUsername === currentUsername) return;
 
-  const bioElement = document.querySelector('[data-testid="UserDescription"]');
-  if (bioElement && !bioElement.parentElement.querySelector('.fast-profile-block-button')) {
-    const button = document.createElement('button');
-    button.className = 'fast-profile-block-button';
-    button.textContent = '👋';
+  const moreButton = document.querySelector('[data-testid="userActions"]');
+  console.log('[FastBlock] moreButton found:', !!moreButton);
+  if (moreButton && !moreButton.parentElement.querySelector('.fast-block-button')) {
+    console.log('[FastBlock] Creating profile block button');
+    const button = moreButton.cloneNode(true);
+    
+    button.removeAttribute('data-testid');
+    button.removeAttribute('aria-label');
+    button.removeAttribute('aria-describedby');
+    button.removeAttribute('aria-expanded');
+    button.removeAttribute('aria-haspopup');
+    
+    button.classList.add('fast-block-button');
+    
+    const div = button.querySelector('div[dir="ltr"]');
+    console.log('[FastBlock] div found:', !!div);
+    if (div) {
+      const svg = div.querySelector('svg');
+      console.log('[FastBlock] svg found:', !!svg);
+      if (svg) {
+        svg.remove();
+      }
+      const existingSpan = div.querySelector('span');
+      console.log('[FastBlock] span found:', !!existingSpan);
+      if (existingSpan) {
+        existingSpan.textContent = '👋';
+      } else {
+        const emojiSpan = document.createElement('span');
+        emojiSpan.textContent = '👋';
+        div.insertBefore(emojiSpan, div.firstChild);
+      }
+    }
+    
     button.dataset.username = profileUsername;
-    button.style.display = 'block';
-    button.style.marginTop = '12px';
 
     button.addEventListener('click', async (e) => {
       e.preventDefault();
       e.stopPropagation();
 
       try {
-        const moreButton = document.querySelector('[data-testid="userActions"]') || document.querySelector('[data-testid="caret"]');
-        if (!moreButton) {
-          console.error('Could not find more button for profile');
-          return;
-        }
-
         moreButton.click();
         
         const dropdown = await waitForDropdown();
@@ -246,7 +290,8 @@ function injectProfileBlockButton() {
       }
     });
 
-    bioElement.parentElement.appendChild(button);
+    moreButton.parentElement.insertBefore(button, moreButton);
+    console.log('[FastBlock] Button inserted');
   }
 }
 
