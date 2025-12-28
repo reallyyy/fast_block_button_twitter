@@ -2,6 +2,14 @@ let currentUsername = '';
 let processedTweets = new Set();
 let processedProfiles = new Set();
 
+const DEBUG = false;
+
+function debugLog(...args) {
+  if (DEBUG) {
+    console.log('[FastBlock]', ...args);
+  }
+}
+
 function getCurrentUsername() {
   const selectors = [
     '[data-testid="UserCell"] a[role="link"]',
@@ -18,8 +26,10 @@ function getCurrentUsername() {
       if (href) {
         const match = href.match(/\/([^\/]+)\/?$/);
         if (match) {
-          currentUsername = match[1];
-          if (currentUsername && !currentUsername.includes('.')) {
+          const username = match[1];
+          if (username && !username.includes('.')) {
+            currentUsername = username;
+            debugLog(`Detected current username: ${currentUsername} from selector: ${selector}`);
             return;
           }
         }
@@ -29,15 +39,42 @@ function getCurrentUsername() {
   
   const profileUrl = window.location.pathname;
   if (profileUrl.startsWith('/') && profileUrl.split('/').filter(Boolean).length === 1) {
-    currentUsername = profileUrl.replace('/', '').replace('/', '');
+    const username = profileUrl.replace('/', '').replace('/', '');
+    if (username) {
+      currentUsername = username;
+      debugLog(`Detected current username from URL: ${currentUsername}`);
+    }
   }
+  
+  debugLog(`Could not detect current username, value: ${currentUsername}`);
+}
+
+function getTweetId(element) {
+  const tweetLink = element.querySelector('a[href*="/status/"]');
+  if (tweetLink) {
+    const match = tweetLink.getAttribute('href').match(/\/status\/(\d+)/);
+    if (match) {
+      return match[1];
+    }
+  }
+  return null;
 }
 
 function getUsernameFromElement(element) {
   const nameElement = element.querySelector('[data-testid="User-Name"]');
   if (nameElement) {
     const usernameSpan = Array.from(nameElement.querySelectorAll('span')).find(span => span.textContent.startsWith('@'));
-    return usernameSpan ? usernameSpan.textContent.replace('@', '') : '';
+    if (usernameSpan) {
+      return usernameSpan.textContent.replace('@', '');
+    }
+    
+    const usernameLink = nameElement.querySelector('a[href^="/"]');
+    if (usernameLink) {
+      const href = usernameLink.getAttribute('href');
+      if (href && href.startsWith('/')) {
+        return href.substring(1);
+      }
+    }
   }
   return '';
 }
@@ -161,30 +198,69 @@ function waitForConfirmationDialog() {
 }
 
 function injectBlockButtons() {
-  const tweets = document.querySelectorAll('[data-testid="tweet"]');
+  const primarySelector = '[data-testid="tweet"]';
+  const fallbackSelectors = [
+    'article[data-testid="tweet"]',
+    'div[role="article"]',
+    '[data-testid="tweet"]'
+  ];
+  
+  let tweets = [];
+  for (const selector of fallbackSelectors) {
+    const found = Array.from(document.querySelectorAll(selector));
+    tweets = tweets.concat(found);
+    if (tweets.length > 0) {
+      break;
+    }
+  }
+  
+  tweets = [...new Set(tweets)];
   
   if (!currentUsername) {
     getCurrentUsername();
   }
   
+  debugLog(`Found ${tweets.length} tweets, currentUsername: ${currentUsername}`);
+  
   tweets.forEach((tweet) => {
-    const tweetKey = tweet.outerHTML.substring(0, 100);
-    if (processedTweets.has(tweetKey)) return;
+    const tweetId = getTweetId(tweet);
+    const tweetKey = tweetId || tweet.outerHTML.substring(0, 200);
+    
+    if (processedTweets.has(tweetKey)) {
+      debugLog(`Skipping already processed tweet: ${tweetKey}`);
+      return;
+    }
     
     const mainUsername = getUsernameFromElement(tweet);
     
-    if (isOwnTweet(tweet)) {
+    if (!mainUsername) {
+      debugLog(`Could not extract username for tweet: ${tweetKey}`);
       processedTweets.add(tweetKey);
       return;
     }
     
-    if (mainUsername) {
-      const moreButton = findMoreButton(tweet);
-      if (moreButton && !tweet.querySelector('.fast-block-button')) {
-        const blockButton = createBlockButton(mainUsername, tweet, moreButton);
-        moreButton.parentElement.insertBefore(blockButton, moreButton);
-      }
+    if (isOwnTweet(tweet)) {
+      debugLog(`Skipping own tweet: ${mainUsername}`);
+      processedTweets.add(tweetKey);
+      return;
     }
+    
+    const moreButton = findMoreButton(tweet);
+    if (!moreButton) {
+      debugLog(`Could not find more button for tweet: ${tweetKey}`);
+      processedTweets.add(tweetKey);
+      return;
+    }
+    
+    if (tweet.querySelector('.fast-block-button')) {
+      debugLog(`Tweet already has fast block button: ${tweetKey}`);
+      processedTweets.add(tweetKey);
+      return;
+    }
+    
+    debugLog(`Injecting block button for @${mainUsername}`);
+    const blockButton = createBlockButton(mainUsername, tweet, moreButton);
+    moreButton.parentElement.insertBefore(blockButton, moreButton);
     
     processedTweets.add(tweetKey);
   });
@@ -204,7 +280,7 @@ function observeNewTweets() {
 
 function injectProfileBlockButton() {
   const isProfilePage = /^\/[^\/]+$/.test(window.location.pathname);
-  console.log('[FastBlock] injectProfileBlockButton - isProfilePage:', isProfilePage, 'pathname:', window.location.pathname);
+  debugLog('injectProfileBlockButton - isProfilePage:', isProfilePage, 'pathname:', window.location.pathname);
   if (!isProfilePage) return;
 
   if (!currentUsername) {
@@ -212,13 +288,16 @@ function injectProfileBlockButton() {
   }
 
   const profileUsername = window.location.pathname.replace('/', '');
-  console.log('[FastBlock] profileUsername:', profileUsername, 'currentUsername:', currentUsername);
-  if (profileUsername === currentUsername) return;
+  debugLog('profileUsername:', profileUsername, 'currentUsername:', currentUsername);
+  if (profileUsername === currentUsername) {
+    debugLog('Skipping own profile page');
+    return;
+  }
 
   const moreButton = document.querySelector('[data-testid="userActions"]');
-  console.log('[FastBlock] moreButton found:', !!moreButton);
+  debugLog('moreButton found:', !!moreButton);
   if (moreButton && !moreButton.parentElement.querySelector('.fast-block-button')) {
-    console.log('[FastBlock] Creating profile block button');
+    debugLog('Creating profile block button');
     const button = moreButton.cloneNode(true);
     
     button.removeAttribute('data-testid');
@@ -230,15 +309,15 @@ function injectProfileBlockButton() {
     button.classList.add('fast-block-button');
     
     const div = button.querySelector('div[dir="ltr"]');
-    console.log('[FastBlock] div found:', !!div);
+    debugLog('div found:', !!div);
     if (div) {
       const svg = div.querySelector('svg');
-      console.log('[FastBlock] svg found:', !!svg);
+      debugLog('svg found:', !!svg);
       if (svg) {
         svg.remove();
       }
       const existingSpan = div.querySelector('span');
-      console.log('[FastBlock] span found:', !!existingSpan);
+      debugLog('span found:', !!existingSpan);
       if (existingSpan) {
         existingSpan.textContent = '👋';
       } else {
@@ -291,21 +370,25 @@ function injectProfileBlockButton() {
     });
 
     moreButton.parentElement.insertBefore(button, moreButton);
-    console.log('[FastBlock] Button inserted');
+    debugLog('Button inserted');
   }
 }
 
 function init() {
+  const runInit = () => {
+    observeNewTweets();
+    injectBlockButtons();
+    setTimeout(injectProfileBlockButton, 500);
+    setTimeout(injectBlockButtons, 1000);
+    setTimeout(injectProfileBlockButton, 1500);
+  };
+  
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
-      setTimeout(injectBlockButtons, 1000);
-      setTimeout(injectProfileBlockButton, 1000);
-      setTimeout(observeNewTweets, 1500);
+      setTimeout(runInit, 1000);
     });
   } else {
-    setTimeout(injectBlockButtons, 1000);
-    setTimeout(injectProfileBlockButton, 1000);
-    setTimeout(observeNewTweets, 1500);
+    setTimeout(runInit, 1000);
   }
 }
 
