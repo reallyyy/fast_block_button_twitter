@@ -4,12 +4,11 @@ Add block/unblock buttons next to usernames on Twitter/X for faster moderation.
 
 ## Features
 
-- **Block/Unblock button** next to every username (tweets, replies, comments)
+- **Block button** (👋 emoji) next to every username (tweets, replies, comments)
 - **Normal Twitter confirmation dialog** for blocking
 - **Excludes own tweets**: No button on your own content
 - **Works everywhere**: Timeline, replies, comments, verified/promoted accounts
-- **Retweets**: Two buttons - block retweeter AND original author
-- **Quote tweets**: Two buttons - block quoter AND quoted user
+- **Single button per tweet**: One block button per tweet for the tweet author
 - **Always visible**: Button next to username
 - **Twitter-styled**: Matches Twitter's native button appearance
 - **Performance optimized**: Throttled DOM watching for smooth scrolling
@@ -23,17 +22,15 @@ Add block/unblock buttons next to usernames on Twitter/X for faster moderation.
 
 ## Usage
 
-- **Block a user**: Click the "Block" button next to their username
-- **Unblock a user**: Click the "Unblock" button next to their username
+- **Block a user**: Click the 👋 button next to their username
 - The button will show the normal Twitter confirmation dialog
-- Works on timeline, replies, comments, retweets, and quote tweets
+- Works on timeline, replies, and comments
 
 ## How It Works
 
 - Automatically detects new tweets as you scroll (infinite scroll)
 - Injects block buttons next to usernames
 - When clicked, simulates clicking Twitter's "more" menu and "Block" option
-- Toggles between Block/Unblock based on Twitter's block state
 
 ## Architecture
 
@@ -42,7 +39,7 @@ Add block/unblock buttons next to usernames on Twitter/X for faster moderation.
 ```
 fast-block-button-twitter/
 ├── manifest.json          # Chrome extension configuration
-├── content.js             # Main content script (374 lines)
+├── content.js             # Main content script (373 lines)
 ├── styles.css             # Button styling
 ├── icon16.png             # 16x16 extension icon
 ├── icon48.png             # 48x48 extension icon
