@@ -197,6 +197,55 @@ function waitForConfirmationDialog() {
   });
 }
 
+function findCommonAncestor(element1, element2) {
+  if (!element1 || !element2) {
+    return element1 || element2?.parentElement;
+  }
+
+  const ancestors1 = new Set();
+  let current = element1;
+
+  while (current) {
+    ancestors1.add(current);
+    current = current.parentElement;
+  }
+
+  current = element2;
+  while (current) {
+    if (ancestors1.has(current)) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+
+  return null;
+}
+
+function findActionContainer(button) {
+  let current = button.parentElement;
+  
+  while (current && current.tagName === 'DIV') {
+    const childDivs = Array.from(current.children).filter(child => child.tagName === 'DIV');
+    
+    if (childDivs.length >= 2) {
+      const hasButtons = childDivs.some(div => {
+        const buttons = div.querySelectorAll('button');
+        return buttons.length > 0;
+      });
+      
+      if (hasButtons) {
+        debugLog(`Found action container with ${childDivs.length} child divs`);
+        return current;
+      }
+    }
+    
+    current = current.parentElement;
+  }
+  
+  debugLog(`Could not find action container, returning button's parent`);
+  return button.parentElement;
+}
+
 function injectBlockButtons() {
   const primarySelector = '[data-testid="tweet"]';
   const fallbackSelectors = [
@@ -267,40 +316,41 @@ function injectBlockButtons() {
     const blockButton = createBlockButton(mainUsername, tweet, moreButton);
 
     try {
-      const moreInnerWrapper = moreButton.parentElement;
-      debugLog(`More inner wrapper:`, moreInnerWrapper?.className?.substring(0, 50));
+      const grokButton = tweet.querySelector('[aria-label="Grok actions"]');
+      debugLog(`Grok button exists in tweet:`, !!grokButton);
 
+      const moreInnerWrapper = moreButton.parentElement;
       if (!moreInnerWrapper) {
         debugLog(`Could not find moreInnerWrapper, skipping tweet: ${tweetKey}`);
         return;
       }
 
-      const grokButton = tweet.querySelector('[aria-label="Grok actions"]');
-      debugLog(`Grok button exists in tweet:`, !!grokButton);
-
-      let insertBeforeElement = null;
+      let targetElementWrapper;
+      let insertionContainer;
+      let insertBeforeWrapper;
 
       if (grokButton) {
-        insertBeforeElement = grokButton.parentElement;
-        debugLog(`Will insert before Grok button's parent`);
+        targetElementWrapper = grokButton.parentElement;
+        insertionContainer = findActionContainer(grokButton);
+        insertBeforeWrapper = targetElementWrapper;
+        debugLog(`Using Grok button wrapper as template`);
       } else {
-        insertBeforeElement = moreInnerWrapper;
-        debugLog(`Grok not found, will insert before More button's parent`);
+        targetElementWrapper = moreInnerWrapper;
+        insertionContainer = findActionContainer(moreButton);
+        insertBeforeWrapper = targetElementWrapper;
+        debugLog(`Using More button wrapper as template`);
       }
 
-      const buttonWrapper = moreInnerWrapper.cloneNode(false);
-      buttonWrapper.appendChild(blockButton);
-      debugLog(`Created button wrapper with className:`, buttonWrapper.className.substring(0, 50));
-
-      const parentContainer = insertBeforeElement.parentElement;
-      debugLog(`Parent container for insertion:`, parentContainer?.className?.substring(0, 50));
-
-      if (!parentContainer) {
-        debugLog(`Could not find parent container, skipping tweet: ${tweetKey}`);
+      if (!targetElementWrapper || !insertionContainer) {
+        debugLog(`Could not determine insertion container, skipping tweet: ${tweetKey}`);
         return;
       }
 
-      parentContainer.insertBefore(buttonWrapper, insertBeforeElement);
+      const buttonWrapper = targetElementWrapper.cloneNode(false);
+      buttonWrapper.appendChild(blockButton);
+      debugLog(`Created button wrapper`);
+
+      insertionContainer.insertBefore(buttonWrapper, insertBeforeWrapper);
       debugLog(`Successfully injected block button for @${mainUsername}`);
       processedTweets.add(tweetKey);
     } catch (error) {
