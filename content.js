@@ -1,14 +1,9 @@
 let currentUsername = '';
 let processedTweets = new Set();
-let processedProfiles = new Set();
+let lastInjectionTime = 0;
+let injectionThrottle = 100;
 
 const DEBUG = false;
-
-function debugLog(...args) {
-  if (DEBUG) {
-    console.log('[FastBlock]', ...args);
-  }
-}
 
 function getCurrentUsername() {
   const selectors = [
@@ -27,26 +22,22 @@ function getCurrentUsername() {
         const match = href.match(/\/([^\/]+)\/?$/);
         if (match) {
           const username = match[1];
-          if (username && !username.includes('.')) {
-            currentUsername = username;
-            debugLog(`Detected current username: ${currentUsername} from selector: ${selector}`);
-            return;
+            if (username && !username.includes('.')) {
+              currentUsername = username;
+              return;
+            }
           }
         }
       }
     }
-  }
-  
-  const profileUrl = window.location.pathname;
-  if (profileUrl.startsWith('/') && profileUrl.split('/').filter(Boolean).length === 1) {
-    const username = profileUrl.replace('/', '').replace('/', '');
-    if (username) {
-      currentUsername = username;
-      debugLog(`Detected current username from URL: ${currentUsername}`);
+    
+    const profileUrl = window.location.pathname;
+    if (profileUrl.startsWith('/') && profileUrl.split('/').filter(Boolean).length === 1) {
+      const username = profileUrl.replace('/', '').replace('/', '');
+      if (username) {
+        currentUsername = username;
+      }
     }
-  }
-  
-  debugLog(`Could not detect current username, value: ${currentUsername}`);
 }
 
 function getTweetId(element) {
@@ -234,7 +225,6 @@ function findActionContainer(button) {
       });
       
       if (hasButtons) {
-        debugLog(`Found action container with ${childDivs.length} child divs`);
         return current;
       }
     }
@@ -242,7 +232,6 @@ function findActionContainer(button) {
     current = current.parentElement;
   }
   
-  debugLog(`Could not find action container, returning button's parent`);
   return button.parentElement;
 }
 
@@ -269,8 +258,6 @@ function injectBlockButtons() {
     getCurrentUsername();
   }
   
-  debugLog(`Found ${tweets.length} tweets, currentUsername: ${currentUsername}`);
-  
   tweets.forEach((tweet) => {
     const tweetId = getTweetId(tweet);
     const tweetKey = tweetId || tweet.outerHTML.substring(0, 200);
@@ -278,10 +265,8 @@ function injectBlockButtons() {
     if (processedTweets.has(tweetKey)) {
       const hasButton = tweet.querySelector('.fast-block-button');
       if (hasButton) {
-        debugLog(`Skipping already processed tweet with button: ${tweetKey}`);
         return;
       } else {
-        debugLog(`Tweet in processedTweets but button missing (likely recycled), reprocessing: ${tweetKey}`);
         processedTweets.delete(tweetKey);
       }
     }
@@ -289,39 +274,32 @@ function injectBlockButtons() {
     const mainUsername = getUsernameFromElement(tweet);
     
     if (!mainUsername) {
-      debugLog(`Could not extract username for tweet: ${tweetKey}`);
       processedTweets.add(tweetKey);
       return;
     }
     
     if (isOwnTweet(tweet)) {
-      debugLog(`Skipping own tweet: ${mainUsername}`);
       processedTweets.add(tweetKey);
       return;
     }
     
     const moreButton = findMoreButton(tweet);
     if (!moreButton) {
-      debugLog(`Could not find more button for tweet: ${tweetKey} - will retry`);
       return;
     }
     
     if (tweet.querySelector('.fast-block-button')) {
-      debugLog(`Tweet already has fast block button: ${tweetKey}`);
       processedTweets.add(tweetKey);
       return;
     }
     
-    debugLog(`Injecting block button for @${mainUsername}`);
     const blockButton = createBlockButton(mainUsername, tweet, moreButton);
 
     try {
       const grokButton = tweet.querySelector('[aria-label="Grok actions"]');
-      debugLog(`Grok button exists in tweet:`, !!grokButton);
 
       const moreInnerWrapper = moreButton.parentElement;
       if (!moreInnerWrapper) {
-        debugLog(`Could not find moreInnerWrapper, skipping tweet: ${tweetKey}`);
         return;
       }
 
@@ -333,38 +311,41 @@ function injectBlockButtons() {
         targetElementWrapper = grokButton.parentElement;
         insertionContainer = findActionContainer(grokButton);
         insertBeforeWrapper = targetElementWrapper;
-        debugLog(`Using Grok button wrapper as template`);
       } else {
         targetElementWrapper = moreInnerWrapper;
         insertionContainer = findActionContainer(moreButton);
         insertBeforeWrapper = targetElementWrapper;
-        debugLog(`Using More button wrapper as template`);
       }
 
       if (!targetElementWrapper || !insertionContainer) {
-        debugLog(`Could not determine insertion container, skipping tweet: ${tweetKey}`);
         return;
       }
 
       const buttonWrapper = targetElementWrapper.cloneNode(false);
       buttonWrapper.appendChild(blockButton);
-      debugLog(`Created button wrapper`);
 
       insertionContainer.insertBefore(buttonWrapper, insertBeforeWrapper);
-      debugLog(`Successfully injected block button for @${mainUsername}`);
       processedTweets.add(tweetKey);
     } catch (error) {
       console.error('Error injecting block button for tweet:', tweetKey, error);
-      debugLog(`Error injecting block button: ${error.message}`);
       return;
     }
   });
 }
 
 function observeNewTweets() {
-  const observer = new MutationObserver((mutations) => {
+  const throttledInject = () => {
+    const now = performance.now();
+    if (now - lastInjectionTime < injectionThrottle) {
+      return;
+    }
+    
+    lastInjectionTime = now;
     injectBlockButtons();
-    injectProfileBlockButton();
+  };
+  
+  const observer = new MutationObserver((mutations) => {
+    throttledInject();
   });
   
   observer.observe(document.body, {
@@ -373,112 +354,11 @@ function observeNewTweets() {
   });
 }
 
-function injectProfileBlockButton() {
-  const isProfilePage = /^\/[^\/]+$/.test(window.location.pathname);
-  debugLog('injectProfileBlockButton - isProfilePage:', isProfilePage, 'pathname:', window.location.pathname);
-  if (!isProfilePage) return;
-
-  if (!currentUsername) {
-    getCurrentUsername();
-  }
-
-  const profileUsername = window.location.pathname.replace('/', '');
-  debugLog('profileUsername:', profileUsername, 'currentUsername:', currentUsername);
-  if (profileUsername === currentUsername) {
-    debugLog('Skipping own profile page');
-    return;
-  }
-
-  const moreButton = document.querySelector('[data-testid="userActions"]');
-  debugLog('moreButton found:', !!moreButton);
-  if (moreButton && !moreButton.parentElement.querySelector('.fast-block-button')) {
-    debugLog('Creating profile block button');
-    const button = moreButton.cloneNode(true);
-    
-    button.removeAttribute('data-testid');
-    button.removeAttribute('aria-label');
-    button.removeAttribute('aria-describedby');
-    button.removeAttribute('aria-expanded');
-    button.removeAttribute('aria-haspopup');
-    
-    button.classList.add('fast-block-button');
-    
-    const div = button.querySelector('div[dir="ltr"]');
-    debugLog('div found:', !!div);
-    if (div) {
-      const svg = div.querySelector('svg');
-      debugLog('svg found:', !!svg);
-      if (svg) {
-        svg.remove();
-      }
-      const existingSpan = div.querySelector('span');
-      debugLog('span found:', !!existingSpan);
-      if (existingSpan) {
-        existingSpan.textContent = '👋';
-      } else {
-        const emojiSpan = document.createElement('span');
-        emojiSpan.textContent = '👋';
-        div.insertBefore(emojiSpan, div.firstChild);
-      }
-    }
-    
-    button.dataset.username = profileUsername;
-
-    button.addEventListener('click', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      try {
-        moreButton.click();
-        
-        const dropdown = await waitForDropdown();
-        
-        const dropdownItems = dropdown.querySelectorAll('[role="menuitem"]');
-        for (const item of dropdownItems) {
-          if (item.textContent.includes('Block') && 
-              item.textContent.includes(`@${profileUsername}`)) {
-            item.click();
-            break;
-          }
-        }
-
-        await waitForConfirmationDialog();
-
-        const observer = new MutationObserver((mutations) => {
-          const dialog = document.querySelector('[data-testid="confirmationSheetDialog"]');
-          if (!dialog) {
-            const currentDropdown = document.querySelector('[role="menu"]');
-            if (currentDropdown) {
-              moreButton.click();
-            }
-            observer.disconnect();
-          }
-        });
-
-        observer.observe(document.body, {
-          childList: true,
-          subtree: true
-        });
-      } catch (error) {
-        console.error('Profile block action failed:', error);
-      }
-    });
-
-    const buttonWrapper = moreButton.parentElement.cloneNode(false);
-    buttonWrapper.className = moreButton.parentElement.className;
-    buttonWrapper.appendChild(button);
-    moreButton.parentElement.parentElement.insertBefore(buttonWrapper, moreButton.parentElement);
-    debugLog('Button inserted');
-  }
-}
-
 function init() {
   const runInit = () => {
     observeNewTweets();
     injectBlockButtons();
-    setTimeout(injectProfileBlockButton, 500);
     setTimeout(injectBlockButtons, 1000);
-    setTimeout(injectProfileBlockButton, 1500);
   };
   
   if (document.readyState === 'loading') {
